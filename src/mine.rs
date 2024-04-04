@@ -14,7 +14,7 @@ use solana_sdk::{
 };
 
 use crate::{
-    cu_limits::{CU_LIMIT_MINE, CU_LIMIT_RESET},
+    cu_limits::{CU_LIMIT_MINE},
     utils::{get_clock_account, get_proof, get_treasury},
     Miner,
 };
@@ -60,17 +60,20 @@ impl Miner {
                 let threshold = treasury.last_reset_at.saturating_add(EPOCH_DURATION);
                 if clock.unix_timestamp.ge(&threshold) {
                     // There are a lot of miners right now, so randomly select into submitting tx
-                    if rng.gen_range(0..RESET_ODDS).eq(&0) {
-                        println!("Sending epoch reset transaction...");
-                        let cu_limit_ix =
-                            ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_RESET);
-                        let cu_price_ix =
-                            ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
-                        let reset_ix = ore::instruction::reset(signer.pubkey());
-                        self.send_and_confirm(&[cu_limit_ix, cu_price_ix, reset_ix], true)
-                            .await
-                            .ok();
-                    }
+
+                    //no, we don't want to waste time with this, let the others play nice
+
+                    // if rng.gen_range(0..RESET_ODDS).eq(&0) {
+                    //     println!("Sending epoch reset transaction...");
+                    //     let cu_limit_ix =
+                    //         ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_RESET);
+                    //     let cu_price_ix =
+                    //         ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+                    //     let reset_ix = ore::instruction::reset(signer.pubkey());
+                    //     self.send_and_confirm(&[cu_limit_ix, cu_price_ix, reset_ix], true)
+                    //         .await
+                    //         .ok();
+                    // }
                 }
 
                 // Submit request.

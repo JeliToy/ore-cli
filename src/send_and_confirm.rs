@@ -10,17 +10,17 @@ use solana_client::{
 };
 use solana_program::instruction::Instruction;
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel},
-    signature::{Signature, Signer},
-    transaction::Transaction,
+    commitment_config::{CommitmentConfig, CommitmentLevel}, signature::{Signature, Signer}, transaction::Transaction
 };
 use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
 
 use crate::Miner;
 
-const RPC_RETRIES: usize = 1;
+const RPC_RETRIES: usize = 0;
 const GATEWAY_RETRIES: usize = 4;
 const CONFIRM_RETRIES: usize = 4;
+const LOOP_SEND_DELAY_MS: u64 = 100;
+const LOOP_SEND_COUNT: u64 = 30;
 
 impl Miner {
     pub async fn send_and_confirm(
@@ -59,13 +59,21 @@ impl Miner {
         };
         let mut tx = Transaction::new_with_payer(ixs, Some(&signer.pubkey()));
         tx.sign(&[&signer], hash);
-
+        
         // Submit tx
         let mut sigs = vec![];
+
+        // Loop
         let mut attempts = 0;
+        let wait = Duration::from_millis(LOOP_SEND_DELAY_MS);
         loop {
             println!("Attempt: {:?}", attempts);
-            match client.send_transaction_with_config(&tx, send_cfg).await {
+            let spam = client.send_transaction_with_config(&tx, send_cfg).await;
+            for _ in 0..LOOP_SEND_COUNT {
+                tokio::time::sleep(wait).await;
+                let _ = client.send_transaction_with_config(&tx, send_cfg).await;
+            }
+            match spam {
                 Ok(sig) => {
                     sigs.push(sig);
                     println!("{:?}", sig);

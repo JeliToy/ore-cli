@@ -48,7 +48,7 @@ struct Args {
         long,
         value_name = "MICROLAMPORTS",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "0"
+        default_value = "10"
     )]
     priority_fee: u64,
 
@@ -160,42 +160,44 @@ struct UpdateDifficultyArgs {}
 
 #[tokio::main]
 async fn main() {
-    // Initialize miner.
-    let args = Args::parse();
-    let cluster = args.rpc;
-    let miner = Arc::new(Miner::new(cluster.clone(), args.priority_fee, args.keypair));
+    loop {
+        // Initialize miner.
+        let args = Args::parse();
+        let cluster = args.rpc;
+        let miner = Arc::new(Miner::new(cluster.clone(), args.priority_fee, args.keypair));
 
-    // Execute user command.
-    match args.command {
-        Commands::Balance(args) => {
-            miner.balance(args.address).await;
-        }
-        Commands::Busses(_) => {
-            miner.busses().await;
-        }
-        Commands::Rewards(args) => {
-            miner.rewards(args.address).await;
-        }
-        Commands::Treasury(_) => {
-            miner.treasury().await;
-        }
-        Commands::Mine(args) => {
-            miner.mine(args.threads).await;
-        }
-        Commands::Claim(args) => {
-            miner.claim(cluster, args.beneficiary, args.amount).await;
-        }
-        #[cfg(feature = "admin")]
-        Commands::Initialize(_) => {
-            miner.initialize().await;
-        }
-        #[cfg(feature = "admin")]
-        Commands::UpdateAdmin(args) => {
-            miner.update_admin(args.new_admin).await;
-        }
-        #[cfg(feature = "admin")]
-        Commands::UpdateDifficulty(_) => {
-            miner.update_difficulty().await;
+        // Execute user command.
+        match args.command {
+            Commands::Balance(args) => {
+                miner.balance(args.address).await;
+            }
+            Commands::Busses(_) => {
+                miner.busses().await;
+            }
+            Commands::Rewards(args) => {
+                miner.rewards(args.address).await;
+            }
+            Commands::Treasury(_) => {
+                miner.treasury().await;
+            }
+            Commands::Mine(args) => {
+                miner.mine(args.threads).await;
+            }
+            Commands::Claim(args) => {
+                miner.claim(cluster, args.beneficiary, args.amount).await;
+            }
+            #[cfg(feature = "admin")]
+            Commands::Initialize(_) => {
+                miner.initialize().await;
+            }
+            #[cfg(feature = "admin")]
+            Commands::UpdateAdmin(args) => {
+                miner.update_admin(args.new_admin).await;
+            }
+            #[cfg(feature = "admin")]
+            Commands::UpdateDifficulty(_) => {
+                miner.update_difficulty().await;
+            }
         }
     }
 }
