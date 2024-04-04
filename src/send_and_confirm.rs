@@ -18,9 +18,9 @@ use crate::Miner;
 
 const RPC_RETRIES: usize = 0;
 const GATEWAY_RETRIES: usize = 4;
-const CONFIRM_RETRIES: usize = 4;
+const CONFIRM_RETRIES: usize = 5;
 const LOOP_SEND_DELAY_MS: u64 = 100;
-const LOOP_SEND_COUNT: u64 = 30;
+const LOOP_SEND_COUNT: u64 = 40;
 
 impl Miner {
     pub async fn send_and_confirm(
