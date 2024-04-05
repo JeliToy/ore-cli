@@ -9,8 +9,9 @@ use solana_client::{
     rpc_config::RpcSendTransactionConfig,
 };
 use solana_program::instruction::Instruction;
+use solana_rpc_client_nonce_utils::nonblocking;
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel}, signature::{Signature, Signer}, transaction::Transaction
+    commitment_config::{CommitmentConfig, CommitmentLevel}, pubkey::Pubkey, signature::{Signature, Signer}, system_instruction, transaction::Transaction
 };
 use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
 
@@ -19,10 +20,80 @@ use crate::Miner;
 const RPC_RETRIES: usize = 0;
 const GATEWAY_RETRIES: usize = 4;
 const CONFIRM_RETRIES: usize = 5;
-const LOOP_SEND_DELAY_MS: u64 = 100;
-const LOOP_SEND_COUNT: u64 = 40;
+const LOOP_SEND_DELAY_MS: u64 = 200;
+const LOOP_SEND_COUNT: u64 = 10;
 
 impl Miner {
+    pub async fn get_or_create_nonce_acct(&self) -> Pubkey {
+        let payer_pubkey = self.signer().pubkey();
+        let nonce_pubkey = Pubkey::create_with_seed(&payer_pubkey, "nonce", &solana_program::system_program::ID).unwrap();
+        let client = RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
+        let opt_nonce_account = client.get_account_with_commitment(&nonce_pubkey, CommitmentConfig { commitment: CommitmentLevel::Confirmed }).await.unwrap().value;
+        if opt_nonce_account.is_none() {
+            println!("Creating nonce account {} from base {}", nonce_pubkey, payer_pubkey);
+            let nonce_lamports = client.get_minimum_balance_for_rent_exemption(80).await.unwrap();
+            let ixs = system_instruction::create_nonce_account_with_seed(&payer_pubkey, &nonce_pubkey, &payer_pubkey, "nonce", &payer_pubkey, nonce_lamports);
+            self.send_and_confirm(&ixs, false).await.unwrap();
+            println!("Created nonce account");
+        }
+        nonce_pubkey
+    }
+
+    pub async fn send_and_confirm_with_nonce(
+        &self,
+        ixs: &[Instruction],
+    ) -> ClientResult<Signature> {
+        let signer = self.signer();
+        let signer_pubkey = signer.pubkey();
+        let client =
+            RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
+
+        let nonce_pubkey = self.get_or_create_nonce_acct().await;
+        let nonce_account = client.get_account(&nonce_pubkey).await.unwrap();
+        let nonce_data = nonblocking::data_from_account(&nonce_account).unwrap();
+        let advance_ix = system_instruction::advance_nonce_account(&nonce_pubkey, &signer_pubkey);
+
+        let mut new_ixs = vec![advance_ix];
+        new_ixs.extend_from_slice(ixs);
+
+        let mut tx = Transaction::new_with_payer(&new_ixs, Some(&self.signer().pubkey()));
+        tx.sign(&[&signer], nonce_data.blockhash());
+
+        let sig = tx.signatures.get(0).unwrap();
+
+        let sim_res = client.simulate_transaction(&tx).await.unwrap();
+        if sim_res.value.err.is_some() {
+            println!("Simulation failed: {:?}", sim_res.value.err);
+            return Err(ClientError {
+                request: None,
+                kind: ClientErrorKind::Custom("Simulation failed".into()),
+            });
+        }   
+        
+        let send_cfg = RpcSendTransactionConfig {
+            skip_preflight: true,
+            preflight_commitment: Some(CommitmentLevel::Confirmed),
+            encoding: Some(UiTransactionEncoding::Base64),
+            max_retries: Some(3),
+            min_context_slot: None,
+        };
+
+        let mut cnt = 0;
+        loop {
+            println!("Sending nonced transaction {}", sig);
+            let sig = client.send_transaction_with_config(&tx, send_cfg).await.unwrap();
+
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+
+            if client.get_signature_status_with_commitment(&sig, CommitmentConfig { commitment: CommitmentLevel::Confirmed }).await.unwrap().is_some() {
+                println!("Transaction landed!");
+                return Ok(sig)
+            }
+            cnt += 1;
+            println!("Transaction did not land {}", cnt);
+        }
+    }
+
     pub async fn send_and_confirm(
         &self,
         ixs: &[Instruction],

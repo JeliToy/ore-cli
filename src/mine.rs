@@ -3,7 +3,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
-use ore::{self, state::Bus, BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION};
+use ore::{self, state::Bus, BUS_ADDRESSES, BUS_COUNT};
 use rand::Rng;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -14,13 +14,10 @@ use solana_sdk::{
 };
 
 use crate::{
-    cu_limits::{CU_LIMIT_MINE},
-    utils::{get_clock_account, get_proof, get_treasury},
+    cu_limits::CU_LIMIT_MINE,
+    utils::{get_proof, get_treasury},
     Miner,
 };
-
-// Odds of being selected to submit a reset tx
-const RESET_ODDS: u64 = 20;
 
 impl Miner {
     pub async fn mine(&self, threads: u64) {
@@ -28,7 +25,6 @@ impl Miner {
         let signer = self.signer();
         self.register().await;
         let mut stdout = stdout();
-        let mut rng = rand::thread_rng();
 
         // Start mining loop
         loop {
@@ -54,28 +50,6 @@ impl Miner {
             // Use busses randomly so on each epoch, transactions don't pile on the same busses
             println!("\n\nSubmitting hash for validation...");
             loop {
-                // Reset epoch, if needed
-                let treasury = get_treasury(self.cluster.clone()).await;
-                let clock = get_clock_account(self.cluster.clone()).await;
-                let threshold = treasury.last_reset_at.saturating_add(EPOCH_DURATION);
-                if clock.unix_timestamp.ge(&threshold) {
-                    // There are a lot of miners right now, so randomly select into submitting tx
-
-                    //no, we don't want to waste time with this, let the others play nice
-
-                    // if rng.gen_range(0..RESET_ODDS).eq(&0) {
-                    //     println!("Sending epoch reset transaction...");
-                    //     let cu_limit_ix =
-                    //         ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_RESET);
-                    //     let cu_price_ix =
-                    //         ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
-                    //     let reset_ix = ore::instruction::reset(signer.pubkey());
-                    //     self.send_and_confirm(&[cu_limit_ix, cu_price_ix, reset_ix], true)
-                    //         .await
-                    //         .ok();
-                    // }
-                }
-
                 // Submit request.
                 let bus = self.find_bus_id(treasury.reward_rate).await;
                 let bus_rewards = (bus.rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
@@ -90,7 +64,7 @@ impl Miner {
                     nonce,
                 );
                 match self
-                    .send_and_confirm(&[cu_limit_ix, cu_price_ix, ix_mine], false)
+                    .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix_mine])
                     .await
                 {
                     Ok(sig) => {

@@ -6,8 +6,8 @@ use ore::{
     MINT_ADDRESS, PROOF, TREASURY_ADDRESS,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::{pubkey::Pubkey, sysvar};
-use solana_sdk::{clock::Clock, commitment_config::CommitmentConfig};
+use solana_program::pubkey::Pubkey;
+use solana_sdk::commitment_config::CommitmentConfig;
 use spl_associated_token_account::get_associated_token_address;
 
 pub async fn get_treasury(cluster: String) -> Treasury {
@@ -27,15 +27,6 @@ pub async fn get_proof(cluster: String, authority: Pubkey) -> Proof {
         .await
         .expect("Failed to get miner account");
     *Proof::try_from_bytes(&data).expect("Failed to parse miner account")
-}
-
-pub async fn get_clock_account(cluster: String) -> Clock {
-    let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
-    let data = client
-        .get_account_data(&sysvar::clock::ID)
-        .await
-        .expect("Failed to get miner account");
-    bincode::deserialize::<Clock>(&data).expect("Failed to deserialize clock")
 }
 
 #[cached]
