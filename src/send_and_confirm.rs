@@ -59,8 +59,6 @@ impl Miner {
         let mut tx = Transaction::new_with_payer(&new_ixs, Some(&self.signer().pubkey()));
         tx.sign(&[&signer], nonce_data.blockhash());
 
-        let sig = tx.signatures.get(0).unwrap();
-
         let sim_res = client.simulate_transaction(&tx).await.unwrap();
         if sim_res.value.err.is_some() {
             println!("Simulation failed: {:?}", sim_res.value.err);
@@ -74,23 +72,27 @@ impl Miner {
             skip_preflight: true,
             preflight_commitment: Some(CommitmentLevel::Confirmed),
             encoding: Some(UiTransactionEncoding::Base64),
-            max_retries: Some(3),
+            max_retries: Some(RPC_RETRIES),
             min_context_slot: None,
         };
 
+        let sig = tx.signatures.get(0).unwrap();
+        println!("Sending nonced transaction {}", sig);
+
         let mut cnt = 0;
         loop {
-            println!("Sending nonced transaction {}", sig);
             let sig = client.send_transaction_with_config(&tx, send_cfg).await.unwrap();
 
-            tokio::time::sleep(Duration::from_millis(2000)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
 
             if client.get_signature_status_with_commitment(&sig, CommitmentConfig { commitment: CommitmentLevel::Confirmed }).await.unwrap().is_some() {
                 println!("Transaction landed!");
                 return Ok(sig)
             }
             cnt += 1;
-            println!("Transaction did not land {}", cnt);
+            if cnt % 25 == 0 {
+                println!("Transaction did not land {}", cnt);
+            }
         }
     }
 
