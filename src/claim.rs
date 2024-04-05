@@ -86,7 +86,7 @@ impl Miner {
         );
         println!("Creating token account {}...", token_account_pubkey);
         match self
-            .send_and_confirm(&[cu_limit_ix, cu_price_ix, ix], false)
+            .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix])
             .await
         {
             Ok(_sig) => println!("Created token account {:?}", token_account_pubkey),
