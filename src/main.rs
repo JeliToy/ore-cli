@@ -122,6 +122,22 @@ struct MineArgs {
         default_value = "1"
     )]
     threads: u64,
+
+    #[arg(
+        long,
+        short,
+        value_name = "AUTO_CLAIM",
+        help = "To automatically claim rewards every 10 mines. Defaults to false.",
+        action,
+    )]
+    auto_claim: bool,
+
+    #[arg(
+        long,
+        value_name = "TOKEN_ACCOUNT_ADDRESS",
+        help = "Token account to receive mining rewards."
+    )]
+    beneficiary: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -137,7 +153,7 @@ struct ClaimArgs {
     amount: Option<f64>,
 
     #[arg(
-        // long,
+        long,
         value_name = "TOKEN_ACCOUNT_ADDRESS",
         help = "Token account to receive mining rewards."
     )]
@@ -181,7 +197,7 @@ async fn main() {
                 miner.treasury().await;
             }
             Commands::Mine(args) => {
-                miner.mine(args.threads).await;
+                miner.mine(args.threads, args.auto_claim, args.beneficiary).await;
             }
             Commands::Claim(args) => {
                 miner.claim(cluster, args.beneficiary, args.amount).await;

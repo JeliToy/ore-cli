@@ -45,7 +45,7 @@ impl Miner {
         let ix = ore::instruction::claim(pubkey, beneficiary, amount);
         println!("Submitting claim transaction...");
         match self
-            .send_and_confirm(&[cu_limit_ix, cu_price_ix, ix], false)
+            .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix])
             .await
         {
             Ok(sig) => {

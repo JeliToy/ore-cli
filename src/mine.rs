@@ -20,11 +20,13 @@ use crate::{
 };
 
 impl Miner {
-    pub async fn mine(&self, threads: u64) {
+    pub async fn mine(&self, threads: u64, auto_claim: bool, beneficiary: Option<String>) {
         // Register, if needed.
         let signer = self.signer();
         self.register().await;
         let mut stdout = stdout();
+
+        let mut count = 0_u16;
 
         // Start mining loop
         loop {
@@ -40,6 +42,15 @@ impl Miner {
             println!("Balance: {} ORE", balance);
             println!("Claimable: {} ORE", rewards);
             println!("Reward rate: {} ORE", reward_rate);
+            if auto_claim {
+                println!("Auto-claiming rewards every 10 mines");
+            }
+
+            if auto_claim && count % 10 == 0 && proof.claimable_rewards > 0 {
+                println!("Auto-claiming rewards...");
+                self.claim(self.cluster.clone(), beneficiary.clone(), Some(rewards)).await;
+            }
+            count += 1;
 
             // Escape sequence that clears the screen and the scrollback buffer
             println!("\nMining for a valid hash...");
