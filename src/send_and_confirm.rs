@@ -42,12 +42,15 @@ impl Miner {
     pub async fn send_and_confirm_with_nonce(
         &self,
         ixs: &[Instruction],
+        signer_indexes: Option<Vec<usize>>,
     ) -> ClientResult<Signature> {
-        let signers = self.signers().iter().collect::<Vec<_>>();
+        let signers = match signer_indexes {
+            Some(indexes) => indexes.iter().map(|i| &(self.signers()[*i])).collect::<Vec<_>>(),
+            None => self.signers().into_iter().collect(),
+        };
         let payer = &signers[0];
         let payer_pubkey = payer.pubkey();
-        let client =
-            RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
+        let client = RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
 
         let nonce_pubkey = self.get_or_create_nonce_acct().await;
         let nonce_account = client.get_account(&nonce_pubkey).await.unwrap();

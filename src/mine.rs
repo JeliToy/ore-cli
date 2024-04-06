@@ -5,12 +5,8 @@ use std::{
 
 use ore::{self, state::Bus, BUS_ADDRESSES, BUS_COUNT};
 use rand::Rng;
-use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    compute_budget::ComputeBudgetInstruction,
-    keccak::{hashv, Hash as KeccakHash},
-    signature::Signer,
+    compute_budget::ComputeBudgetInstruction, keccak::{hashv, Hash as KeccakHash}, pubkey::Pubkey, signature::Signer
 };
 
 use crate::{
@@ -22,8 +18,8 @@ use crate::{
 impl Miner {
     pub async fn mine(&self, threads: u64, auto_claim: bool, beneficiary: Option<String>) {
         // Register, if needed.
-        let signer = self.signer();
         self.register().await;
+        let signers = self.signers();
         let mut stdout = stdout();
 
         let mut count = 0_u16;
@@ -31,31 +27,39 @@ impl Miner {
         // Start mining loop
         loop {
             // Fetch account state
-            let balance = self.get_ore_display_balance().await;
             let treasury = get_treasury(self.cluster.clone()).await;
-            let proof = get_proof(self.cluster.clone(), signer.pubkey()).await;
-            let rewards =
-                (proof.claimable_rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
+            let mut proofs = Vec::new();
+            let mut rewards = Vec::new();
+
+            for signer in signers.iter() {
+                let proof = get_proof(self.cluster.clone(), signer.pubkey()).await;
+                proofs.push(proof);
+                let reward = (proof.claimable_rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
+                rewards.push(reward);
+            }
             let reward_rate =
                 (treasury.reward_rate as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
+
+            // Escape sequence that clears the screen and the scrollback buffer
             stdout.write_all(b"\x1b[2J\x1b[3J\x1b[H").ok();
-            println!("Balance: {} ORE", balance);
-            println!("Claimable: {} ORE", rewards);
+
+            println!("Claimable: {:?}", rewards.iter().sum::<f64>());
             println!("Reward rate: {} ORE", reward_rate);
             if auto_claim {
                 println!("Auto-claiming rewards every 10 mines");
             }
 
-            if auto_claim && count % 10 == 0 && proof.claimable_rewards > 0 {
+            if auto_claim && count % 10 == 0 {
                 println!("Auto-claiming rewards...");
-                self.claim(self.cluster.clone(), beneficiary.clone(), Some(rewards)).await;
+                self.claim(self.cluster.clone(), beneficiary.clone()).await;
             }
             count += 1;
 
-            // Escape sequence that clears the screen and the scrollback buffer
             println!("\nMining for a valid hash...");
-            let (next_hash, nonce) =
-                self.find_next_hash_par(proof.hash.into(), treasury.difficulty.into(), threads);
+            let new_solutions = signers.iter().enumerate().map(|(i, signer)| {
+                    let (hash, nonce) = Self::find_next_hash_par(signer.pubkey(), proofs[i].hash.into(), treasury.difficulty.into(), threads);
+                    (signer, hash, nonce)
+            }).collect::<Vec<_>>();
 
             // Submit mine tx.
             // Use busses randomly so on each epoch, transactions don't pile on the same busses
@@ -65,17 +69,18 @@ impl Miner {
                 let bus = self.find_bus_id(treasury.reward_rate).await;
                 let bus_rewards = (bus.rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
                 println!("Sending on bus {} ({} ORE)", bus.id, bus_rewards);
-                let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_MINE);
+                let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_MINE * signers.len() as u32);
                 let cu_price_ix =
                     ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
-                let ix_mine = ore::instruction::mine(
-                    signer.pubkey(),
+                let ixs_mine = new_solutions.iter().map(|a|ore::instruction::mine(
+                    a.0.pubkey(),
                     BUS_ADDRESSES[bus.id as usize],
-                    next_hash.into(),
-                    nonce,
-                );
+                    a.1.into(),
+                    a.2,
+                ));
+                let ixs: Vec<_> = vec![cu_limit_ix, cu_price_ix].into_iter().chain(ixs_mine).collect();
                 match self
-                    .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix_mine])
+                    .send_and_confirm_with_nonce(&ixs, None)
                     .await
                 {
                     Ok(sig) => {
@@ -102,28 +107,8 @@ impl Miner {
         }
     }
 
-    fn _find_next_hash(&self, hash: KeccakHash, difficulty: KeccakHash) -> (KeccakHash, u64) {
-        let signer = self.signer();
-        let mut next_hash: KeccakHash;
-        let mut nonce = 0u64;
-        loop {
-            next_hash = hashv(&[
-                hash.to_bytes().as_slice(),
-                signer.pubkey().to_bytes().as_slice(),
-                nonce.to_le_bytes().as_slice(),
-            ]);
-            if next_hash.le(&difficulty) {
-                break;
-            } else {
-                println!("Invalid hash: {} Nonce: {:?}", next_hash.to_string(), nonce);
-            }
-            nonce += 1;
-        }
-        (next_hash, nonce)
-    }
-
     fn find_next_hash_par(
-        &self,
+        pubkey: Pubkey,
         hash: KeccakHash,
         difficulty: KeccakHash,
         threads: u64,
@@ -133,8 +118,6 @@ impl Miner {
             KeccakHash::new_from_array([0; 32]),
             0,
         )));
-        let signer = self.signer();
-        let pubkey = signer.pubkey();
         let thread_handles: Vec<_> = (0..threads)
             .map(|i| {
                 std::thread::spawn({
@@ -185,25 +168,5 @@ impl Miner {
 
         let r_solution = solution.lock().expect("Failed to get lock");
         *r_solution
-    }
-
-    pub async fn get_ore_display_balance(&self) -> String {
-        let client =
-            RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
-        let signer = self.signer();
-        let token_account_address = spl_associated_token_account::get_associated_token_address(
-            &signer.pubkey(),
-            &ore::MINT_ADDRESS,
-        );
-        match client.get_token_account(&token_account_address).await {
-            Ok(token_account) => {
-                if let Some(token_account) = token_account {
-                    token_account.token_amount.ui_amount_string
-                } else {
-                    "0.00".to_string()
-                }
-            }
-            Err(_) => "Err".to_string(),
-        }
     }
 }

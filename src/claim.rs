@@ -15,9 +15,7 @@ use crate::{
 };
 
 impl Miner {
-    pub async fn claim(&self, cluster: String, beneficiary: Option<String>, amount: Option<f64>) {
-        let signer = &self.signers()[0];
-        let pubkey = signer.pubkey();
+    pub async fn claim(&self, cluster: String, beneficiary: Option<String>) {
         let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
         let beneficiary = match beneficiary {
             Some(beneficiary) => {
@@ -25,31 +23,43 @@ impl Miner {
             }
             None => self.initialize_ata().await,
         };
-        let amount = if let Some(amount) = amount {
-            (amount * 10f64.powf(ore::TOKEN_DECIMALS as f64)) as u64
-        } else {
-            match client.get_account(&proof_pubkey(pubkey)).await {
-                Ok(proof_account) => {
-                    let proof = Proof::try_from_bytes(&proof_account.data).unwrap();
-                    proof.claimable_rewards
-                }
-                Err(err) => {
-                    println!("Error looking up claimable rewards: {:?}", err);
-                    return;
-                }
+        let mut pubkey_amounts = Vec::new();
+        let mut signer_indexes = Vec::new();
+        for (i, signer) in self.signers().iter().enumerate() {
+            let data = client
+                .get_account(&proof_pubkey(signer.pubkey()))
+                .await
+                .unwrap()
+                .data;
+            let proof = Proof::try_from_bytes(
+                &data,
+            )
+            .unwrap();
+            if proof.claimable_rewards > 0 {
+                pubkey_amounts.push((signer.pubkey(), proof.claimable_rewards));
+                signer_indexes.push(i);
             }
-        };
-        let amountf = (amount as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
-        let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_CLAIM);
+        }
+
+        if pubkey_amounts.is_empty() {
+            println!("No rewards to claim");
+            return;
+        }
+
+        println!("Claiming rewards for {:?} miners...", pubkey_amounts.len());
+
+        let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_CLAIM * pubkey_amounts.len() as u32);
         let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
-        let ix = ore::instruction::claim(pubkey, beneficiary, amount);
+        let mine_ixs = pubkey_amounts.iter().map(|a|ore::instruction::claim(a.0, beneficiary, a.1));
+        let ixs = vec![cu_limit_ix, cu_price_ix].into_iter().chain(mine_ixs).collect::<Vec<_>>();
+
         println!("Submitting claim transaction...");
         match self
-            .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix])
+            .send_and_confirm_with_nonce(&ixs, Some(signer_indexes))
             .await
         {
             Ok(sig) => {
-                println!("Claimed {:} ORE to account {:}", amountf, beneficiary);
+                println!("Claimed {:} ORE to account {:}", pubkey_amounts.iter().map(|a|a.1).sum::<u64>(), beneficiary);
                 println!("{:?}", sig);
             }
             Err(err) => {
@@ -86,7 +96,7 @@ impl Miner {
         );
         println!("Creating token account {}...", token_account_pubkey);
         match self
-            .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix])
+            .send_and_confirm_with_nonce(&[cu_limit_ix, cu_price_ix, ix], Some(vec![0]))
             .await
         {
             Ok(_sig) => println!("Created token account {:?}", token_account_pubkey),

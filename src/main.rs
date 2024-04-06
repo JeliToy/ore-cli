@@ -200,7 +200,7 @@ async fn main() {
                 miner.mine(args.threads, args.auto_claim, args.beneficiary).await;
             }
             Commands::Claim(args) => {
-                miner.claim(cluster, args.beneficiary, args.amount).await;
+                miner.claim(cluster, args.beneficiary).await;
             }
             #[cfg(feature = "admin")]
             Commands::Initialize(_) => {
@@ -223,8 +223,9 @@ impl Miner {
         let mut keypairs = Vec::new();
         match keypair_filepath.clone() {
             Some(filepath) => {
-                let mut f = filepath;
-                let path = Path::new(&f);
+                let mut f = filepath.clone();
+                let temp = f.clone();
+                let path = Path::new(&temp);
                 let orig_filename = path.file_name().unwrap().to_str().unwrap().split('.').next().unwrap();
                 let mut i = 1_u8;
                 while let Ok(key) = read_keypair_file(f) {
