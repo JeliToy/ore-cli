@@ -25,7 +25,7 @@ const LOOP_SEND_COUNT: u64 = 10;
 
 impl Miner {
     pub async fn get_or_create_nonce_acct(&self) -> Pubkey {
-        let payer_pubkey = self.signer().pubkey();
+        let payer_pubkey = self.signers()[0].pubkey();
         let nonce_pubkey = Pubkey::create_with_seed(&payer_pubkey, "nonce", &solana_program::system_program::ID).unwrap();
         let client = RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
         let opt_nonce_account = client.get_account_with_commitment(&nonce_pubkey, CommitmentConfig { commitment: CommitmentLevel::Confirmed }).await.unwrap().value;
@@ -43,21 +43,22 @@ impl Miner {
         &self,
         ixs: &[Instruction],
     ) -> ClientResult<Signature> {
-        let signer = self.signer();
-        let signer_pubkey = signer.pubkey();
+        let signers = self.signers().iter().collect::<Vec<_>>();
+        let payer = &signers[0];
+        let payer_pubkey = payer.pubkey();
         let client =
             RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
 
         let nonce_pubkey = self.get_or_create_nonce_acct().await;
         let nonce_account = client.get_account(&nonce_pubkey).await.unwrap();
         let nonce_data = nonblocking::data_from_account(&nonce_account).unwrap();
-        let advance_ix = system_instruction::advance_nonce_account(&nonce_pubkey, &signer_pubkey);
+        let advance_ix = system_instruction::advance_nonce_account(&nonce_pubkey, &payer_pubkey);
 
         let mut new_ixs = vec![advance_ix];
         new_ixs.extend_from_slice(ixs);
 
-        let mut tx = Transaction::new_with_payer(&new_ixs, Some(&self.signer().pubkey()));
-        tx.sign(&[&signer], nonce_data.blockhash());
+        let mut tx = Transaction::new_with_payer(&new_ixs, Some(&payer.pubkey()));
+        tx.sign(&signers, nonce_data.blockhash());
 
         let sim_res = client.simulate_transaction(&tx).await.unwrap();
         if sim_res.value.err.is_some() {
@@ -102,7 +103,7 @@ impl Miner {
         skip_confirm: bool,
     ) -> ClientResult<Signature> {
         let mut stdout = stdout();
-        let signer = self.signer();
+        let signer = &self.signers()[0];
         let client =
             RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
 

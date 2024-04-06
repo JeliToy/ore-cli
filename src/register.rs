@@ -9,7 +9,8 @@ use crate::{cu_limits::CU_LIMIT_REGISTER, utils::proof_pubkey, Miner};
 impl Miner {
     pub async fn register(&self) {
         // Return early if miner is already registered
-        let signer = self.signer();
+        let signers = self.signers();
+        let payer = &signers[0];
         let proof_address = proof_pubkey(signer.pubkey());
         let client =
             RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());

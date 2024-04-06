@@ -16,7 +16,7 @@ use crate::{
 
 impl Miner {
     pub async fn claim(&self, cluster: String, beneficiary: Option<String>, amount: Option<f64>) {
-        let signer = self.signer();
+        let signer = &self.signers()[0];
         let pubkey = signer.pubkey();
         let client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
         let beneficiary = match beneficiary {
@@ -60,7 +60,7 @@ impl Miner {
 
     async fn initialize_ata(&self) -> Pubkey {
         // Initialize client.
-        let signer = self.signer();
+        let signer = &self.signers()[0];
         let client =
             RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
 

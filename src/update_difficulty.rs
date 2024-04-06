@@ -5,7 +5,7 @@ use crate::Miner;
 
 impl Miner {
     pub async fn update_difficulty(&self) {
-        let signer = self.signer();
+        let signer = &self.signers()[0];
         // let new_difficulty = KeccakHash::new_from_array([
         //     0, 0, 0, 64, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
         //     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,

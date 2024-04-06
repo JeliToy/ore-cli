@@ -15,13 +15,13 @@ mod update_admin;
 mod update_difficulty;
 mod utils;
 
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use clap::{command, Parser, Subcommand};
 use solana_sdk::signature::{read_keypair_file, Keypair};
 
 struct Miner {
-    pub keypair_filepath: Option<String>,
+    pub keypairs: Vec<Keypair>,
     pub priority_fee: u64,
     pub cluster: String,
 }
@@ -40,7 +40,7 @@ struct Args {
     #[arg(
         long,
         value_name = "KEYPAIR_FILEPATH",
-        help = "Filepath to keypair to use"
+        help = "Filepath to keypair to use. To use multiple, provide the first and name the others with a number suffix. E.g. key.json, key1.json, key2.json, ...",
     )]
     keypair: Option<String>,
 
@@ -220,17 +220,33 @@ async fn main() {
 
 impl Miner {
     pub fn new(cluster: String, priority_fee: u64, keypair_filepath: Option<String>) -> Self {
+        let mut keypairs = Vec::new();
+        match keypair_filepath.clone() {
+            Some(filepath) => {
+                let mut f = filepath;
+                let path = Path::new(&f);
+                let orig_filename = path.file_name().unwrap().to_str().unwrap().split('.').next().unwrap();
+                let mut i = 1_u8;
+                while let Ok(key) = read_keypair_file(f) {
+                    keypairs.push(key);
+                    f = path.with_file_name(format!("{}{}.json", orig_filename, i)).to_str().unwrap().to_string();
+                    i += 1;
+                }
+            }
+            None => panic!("No keypair provided"),
+        }
+        if keypairs.len() == 0 {
+            panic!("No keypair found");
+        }
+        println!("Found {} keypairs", keypairs.len());
         Self {
-            keypair_filepath,
+            keypairs,
             priority_fee,
             cluster,
         }
     }
 
-    pub fn signer(&self) -> Keypair {
-        match self.keypair_filepath.clone() {
-            Some(filepath) => read_keypair_file(filepath).unwrap(),
-            None => panic!("No keypair provided"),
-        }
+    pub fn signers(&self) -> &[Keypair] {
+        &self.keypairs
     }
 }
