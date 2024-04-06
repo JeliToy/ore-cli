@@ -20,7 +20,7 @@ use crate::Miner;
 const RPC_RETRIES: usize = 0;
 const GATEWAY_RETRIES: usize = 4;
 const CONFIRM_RETRIES: usize = 5;
-const LOOP_SEND_DELAY_MS: u64 = 200;
+const LOOP_SEND_DELAY_MS: u64 = 400;
 const LOOP_SEND_COUNT: u64 = 10;
 
 impl Miner {
@@ -45,10 +45,16 @@ impl Miner {
         signer_indexes: Option<Vec<usize>>,
     ) -> ClientResult<Signature> {
         let signers = match signer_indexes {
-            Some(indexes) => indexes.iter().map(|i| &(self.signers()[*i])).collect::<Vec<_>>(),
+            Some(indexes) => {
+                let mut v = indexes.iter().map(|i| &(self.signers()[*i])).collect::<Vec<_>>();
+                if !indexes.contains(&0) {
+                    v.push(&self.signers()[0]);
+                }
+                v
+            }
             None => self.signers().into_iter().collect(),
         };
-        let payer = &signers[0];
+        let payer = &self.signers()[0];
         let payer_pubkey = payer.pubkey();
         let client = RpcClient::new_with_commitment(self.cluster.clone(), CommitmentConfig::confirmed());
 
@@ -64,13 +70,19 @@ impl Miner {
         tx.sign(&signers, nonce_data.blockhash());
 
         let sim_res = client.simulate_transaction(&tx).await.unwrap();
-        if sim_res.value.err.is_some() {
-            println!("Simulation failed: {:?}", sim_res.value.err);
-            return Err(ClientError {
-                request: None,
-                kind: ClientErrorKind::Custom("Simulation failed".into()),
-            });
-        }   
+        match sim_res.value.err {
+            None => {
+                println!("Simulation succeeded {:?} cu", sim_res.value.units_consumed.unwrap());
+            }
+            Some(err) => {
+                println!("Simulation failed: {:?}", err);
+                println!("Logs: {:?}", sim_res.value.logs);
+                return Err(ClientError {
+                    request: None,
+                    kind: ClientErrorKind::Custom("Simulation failed".into()),
+                });
+            }
+        }
         
         let send_cfg = RpcSendTransactionConfig {
             skip_preflight: true,
@@ -87,7 +99,7 @@ impl Miner {
         loop {
             let sig = client.send_transaction_with_config(&tx, send_cfg).await.unwrap();
 
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(LOOP_SEND_DELAY_MS)).await;
 
             if client.get_signature_status_with_commitment(&sig, CommitmentConfig { commitment: CommitmentLevel::Confirmed }).await.unwrap().is_some() {
                 println!("Transaction landed!");
