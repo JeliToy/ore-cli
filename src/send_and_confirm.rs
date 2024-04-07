@@ -118,7 +118,7 @@ impl Miner {
                             .expect("gets next scheduled leader")
                             .into_inner();
                         let num_slots = next_leader.next_leader_slot - next_leader.current_slot;
-                        is_leader_slot = num_slots <= 3;
+                        is_leader_slot = num_slots <= 2;
                         println!(
                             "next jito leader slot in {num_slots} slots in {}",
                             next_leader.next_leader_region
