@@ -104,9 +104,8 @@ impl Miner {
                     .into_inner();
 
                 let txs: [VersionedTransaction; 1] = [tx.into()];
-                let mut success = false;
 
-                while !success {
+                loop {
                     // wait for jito-solana leader slot
                     let mut is_leader_slot = false;
                     while !is_leader_slot {
@@ -131,12 +130,12 @@ impl Miner {
                     match jito_searcher_client::send_bundle_with_confirmation(&txs, &client, &mut jito_client, &mut bundle_results_subscription).await {
                         Ok(_) => {
                             println!("Bundle sent to jito");
-                            success = true;
+                            break;
                         }
                         Err(err) => {
                             if err.to_string().contains("Blockhash not found") {
                                 println!("Bundle sent to jito");
-                                success = true;
+                                break;
                             }
                             if !err.to_string().contains("Searcher service did not provide bundle status in time") {
                                 Err(err.to_string())?;
