@@ -49,7 +49,11 @@ impl Miner {
         println!("Claiming rewards for {:?} miners...", pubkey_amounts.len());
 
         let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_CLAIM * pubkey_amounts.len() as u32);
-        let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+        let prio_fee = match self.jito_keypair {
+            Some(_) => 1000,
+            None => self.priority_fee,
+        };
+        let cu_price_ix = ComputeBudgetInstruction::set_compute_unit_price(prio_fee);
         let mine_ixs = pubkey_amounts.iter().map(|a|ore::instruction::claim(a.0, beneficiary, a.1));
         let ixs = vec![cu_limit_ix, cu_price_ix].into_iter().chain(mine_ixs).collect::<Vec<_>>();
 
