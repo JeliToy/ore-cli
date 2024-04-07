@@ -15,6 +15,8 @@ use crate::{
     Miner,
 };
 
+const CLAIM_PERIOD: u16 = 100;
+
 impl Miner {
     pub async fn mine(&self, threads: u64, auto_claim: bool, beneficiary: Option<String>) {
         // Register, if needed.
@@ -46,10 +48,10 @@ impl Miner {
             println!("Claimable: {:?}", rewards.iter().sum::<f64>());
             println!("Reward rate: {} ORE", reward_rate);
             if auto_claim {
-                println!("Auto-claiming rewards every 10 mines");
+                println!("Auto-claiming rewards every {} mines", CLAIM_PERIOD);
             }
 
-            if auto_claim && count % 10 == 0 {
+            if auto_claim && count % CLAIM_PERIOD == 0 {
                 println!("Auto-claiming rewards...");
                 self.claim(self.cluster.clone(), beneficiary.clone()).await;
             }
@@ -70,8 +72,13 @@ impl Miner {
                 let bus_rewards = (bus.rewards as f64) / (10f64.powf(ore::TOKEN_DECIMALS as f64));
                 println!("Sending on bus {} ({} ORE)", bus.id, bus_rewards);
                 let cu_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(CU_LIMIT_MINE * signers.len() as u32);
+                //jito just 1k mL
+                let prio_fee = match self.jito_keypair {
+                    Some(_) => 1000,
+                    None => self.priority_fee,
+                };
                 let cu_price_ix =
-                    ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+                    ComputeBudgetInstruction::set_compute_unit_price(prio_fee);
                 let ixs_mine = new_solutions.iter().map(|a|ore::instruction::mine(
                     a.0.pubkey(),
                     BUS_ADDRESSES[bus.id as usize],
@@ -80,15 +87,20 @@ impl Miner {
                 ));
                 let ixs: Vec<_> = vec![cu_limit_ix, cu_price_ix].into_iter().chain(ixs_mine).collect();
                 match self
-                    .send_and_confirm_with_nonce(&ixs, None)
+                    .send_and_confirm_with_nonce(&ixs, None, false)
                     .await
                 {
                     Ok(sig) => {
                         println!("Success: {}", sig);
                         break;
                     }
-                    Err(_err) => {
+                    Err(err) => {
                         // TODO
+                        if err.contains("custom program error") {
+                            println!("Unrecoverable Error: {}", err);
+                            break;
+                        }
+                        println!("Error: {:?}", err);
                     }
                 }
             }

@@ -32,3 +32,6 @@ spl-token = { version = "^4", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "^2.2", features = [ "no-entrypoint" ] }
 tokio = "1.35.1"
 solana-rpc-client-nonce-utils = "=1.18.9"
+jito-searcher-client = { path = "../searcher-examples/searcher_client" }
+jito-protos = { path = "../searcher-examples/jito_protos" }
+tonic = { version = "0.10", features = ["tls-roots"] }

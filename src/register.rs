@@ -35,7 +35,7 @@ impl Miner {
         let ixs_iter = signers_needing_register.iter().map(|a|ore::instruction::register(a.pubkey()));
         let ixs: Vec<_> = vec![cu_limit_ix, cu_price_ix].into_iter().chain(ixs_iter).collect();
 
-        self.send_and_confirm_with_nonce(&ixs, Some(signer_indexes))
+        self.send_and_confirm_with_nonce(&ixs, Some(signer_indexes), true)
             .await
             .expect("Transaction failed");
     }

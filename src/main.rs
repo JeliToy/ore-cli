@@ -20,7 +20,9 @@ use std::{path::Path, sync::Arc};
 use clap::{command, Parser, Subcommand};
 use solana_sdk::signature::{read_keypair_file, Keypair};
 
+
 struct Miner {
+    pub jito_keypair: Option<Arc<Keypair>>,
     pub keypairs: Vec<Keypair>,
     pub priority_fee: u64,
     pub cluster: String,
@@ -43,6 +45,13 @@ struct Args {
         help = "Filepath to keypair to use. To use multiple, provide the first and name the others with a number suffix. E.g. key.json, key1.json, key2.json, ...",
     )]
     keypair: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "JITO_KEYPAIR_FILEPATH",
+        help = "The keypair to use to make jito bundle submissions. If not provided, jito bundle submissions will be disabled.",
+    )]
+    jito_keypair: Option<String>,
 
     #[arg(
         long,
@@ -180,7 +189,7 @@ async fn main() {
         // Initialize miner.
         let args = Args::parse();
         let cluster = args.rpc;
-        let miner = Arc::new(Miner::new(cluster.clone(), args.priority_fee, args.keypair));
+        let miner = Arc::new(Miner::new(cluster.clone(), args.priority_fee, args.keypair, args.jito_keypair).await);
 
         // Execute user command.
         match args.command {
@@ -219,7 +228,7 @@ async fn main() {
 }
 
 impl Miner {
-    pub fn new(cluster: String, priority_fee: u64, keypair_filepath: Option<String>) -> Self {
+    pub async fn new(cluster: String, priority_fee: u64, keypair_filepath: Option<String>, jito_keypair_filepath: Option<String>) -> Self {
         let mut keypairs = Vec::new();
         match keypair_filepath.clone() {
             Some(filepath) => {
@@ -240,10 +249,18 @@ impl Miner {
             panic!("No keypair found");
         }
         println!("Found {} keypairs", keypairs.len());
+        let jito_keypair = match jito_keypair_filepath {
+            Some(filepath) => {
+                read_keypair_file(filepath).ok().map(Arc::new)
+            }
+            None => None,
+        };
+        
         Self {
             keypairs,
             priority_fee,
             cluster,
+            jito_keypair,
         }
     }
 
