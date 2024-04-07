@@ -23,7 +23,7 @@ const GATEWAY_RETRIES: usize = 4;
 const CONFIRM_RETRIES: usize = 5;
 const LOOP_SEND_DELAY_MS: u64 = 400;
 const LOOP_SEND_COUNT: u64 = 10;
-const JITO_TIP_LAMPORTS: u64 = 1000000;
+const JITO_TIP_LAMPORTS: u64 = 210000;
 const JITO_TIP_ADDRESS: &str = "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt";
 const BLOCK_ENGINE_URL: &str = "https://ny.mainnet.block-engine.jito.wtf";
 
